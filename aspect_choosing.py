@@ -39,6 +39,7 @@ class albert_1024(torch.nn.Module):
         return self.feed_forward(self.model(x1).last_hidden_state.view(-1, 512*312)) + self.feed_forward(self.model(x2).last_hidden_state.view(-1, 512*312))
 
 if __name__ == '__main__':
+    torch.cuda.empty_cache()
     logging.basicConfig(level=logging.INFO)
     """
     df = pd.read_csv("./dev.csv")
@@ -89,22 +90,23 @@ if __name__ == '__main__':
     df = df[['ids', 'list']]
 
     training_data = CustomDataset(df)
-    train_loader = DataLoader(training_data, batch_size=8, shuffle=True)
+    train_loader = DataLoader(training_data, batch_size=12, shuffle=True)
 
     from tqdm import tqdm
     optimizer = torch.optim.AdamW(params = model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01, amsgrad=False)
-    print(next(model.parameters()).is_cuda) # returns a boolean
     for epoch in range(3):
-        for _, x in enumerate(tqdm(train_loader), 0):
+        t = tqdm(train_loader)
+        for _, x in enumerate(t, 0):
             outputs = model(x[0].to(torch.device("cuda:0")))
             label = x[1].to(torch.device("cuda:0"))
 
             optimizer.zero_grad()
             #loss = nn.BCELoss()(outputs, x[1])
             loss = nn.BCEWithLogitsLoss()(outputs, label)
-        
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            t.set_postfix(loss=loss.item())
 
-    model.save_pretrained("./first_stage")
+    torch.save(model, "model")
