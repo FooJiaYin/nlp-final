@@ -27,7 +27,7 @@ class albert_1024(torch.nn.Module):
         self.model = model
         self.feed_forward = nn.Sequential(
             nn.Dropout(),
-            nn.Linear(512*768, 256),
+            nn.Linear(512*312, 256),
             nn.SELU(),
             nn.Linear(256, 256),
             nn.SELU(),
@@ -36,7 +36,7 @@ class albert_1024(torch.nn.Module):
         )
     def forward(self, x):
         x1, x2 = torch.split(x, 512, dim=1)
-        return self.feed_forward(self.model(x1).last_hidden_state.view(-1, 512*768)) + self.feed_forward(self.model(x2).last_hidden_state.view(-1, 512*768))
+        return self.feed_forward(self.model(x1).last_hidden_state.view(-1, 512*312)) + self.feed_forward(self.model(x2).last_hidden_state.view(-1, 512*312))
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
@@ -46,7 +46,8 @@ if __name__ == '__main__':
     df['list'] = df[df.columns[2:]].values.tolist()
     """
     #model_name = "WENGSYX/Deberta-Chinese-Large"
-    model_name = "ckiplab/albert-base-chinese"
+    #model_name = "ckiplab/albert-base-chinese"
+    model_name = "ckiplab/albert-tiny-chinese"
     """
     tokenizer = trf.BertTokenizer.from_pretrained(model_name)
     embedded = tokenizer.batch_encode_plus(
@@ -76,7 +77,7 @@ if __name__ == '__main__':
     #classifier = trf.AutoModelForSequenceClassification.from_config(config)
     #classifier.bert = bert
     model = albert_1024(model)
-
+    model.to(torch.device("cuda:0"))
     model.train()
 
     ids = [[int(y) for y in x.rstrip().split(',')] for x in open("ckipl_abalbert-base-chinese_tk.txt").readlines()]
@@ -88,21 +89,22 @@ if __name__ == '__main__':
     df = df[['ids', 'list']]
 
     training_data = CustomDataset(df)
-    train_loader = DataLoader(training_data, batch_size=32, shuffle=True)
+    train_loader = DataLoader(training_data, batch_size=8, shuffle=True)
 
+    from tqdm import tqdm
     optimizer = torch.optim.AdamW(params = model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01, amsgrad=False)
-    for epoch in range(20):
-        for _, x in enumerate(train_loader, 0):
-            outputs = model(x[0])
+    print(next(model.parameters()).is_cuda) # returns a boolean
+    for epoch in range(3):
+        for _, x in enumerate(tqdm(train_loader), 0):
+            outputs = model(x[0].to(torch.device("cuda:0")))
+            label = x[1].to(torch.device("cuda:0"))
 
             optimizer.zero_grad()
             #loss = nn.BCELoss()(outputs, x[1])
-            loss = nn.BCEWithLogitsLoss()(outputs, x[1])
-            if _%5000==0:
-                print(f'Epoch: {epoch}, Loss:  {loss.item()}')
+            loss = nn.BCEWithLogitsLoss()(outputs, label)
         
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-#optimizer = torch.optim.Adam(params =  model.parameters(), lr=LEARNING_RATE)
+    model.save_pretrained("./first_stage")
